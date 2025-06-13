@@ -30,18 +30,7 @@
   "apphosting": [
     {
       "backendId": "my-web-app",
-      "rootDir": "gardisen-quality-inspections",
-      "ignore": [
-        "node_modules",
-        ".git",
-        "firebase-debug.log",
-        "firebase-debug.*.log",
-        "functions"
-      ]
-    },
-    {
-      "backendId": "my-web-app",
-      "rootDir": "quality-inspections-codebase",
+      "rootDir": "public",
       "ignore": [
         "node_modules",
         ".git",
