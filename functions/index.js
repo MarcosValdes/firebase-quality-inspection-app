@@ -2,23 +2,21 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
-const speech = require("@google-cloud/speech");
 const path = require("path");
 const { getStorage } = require("firebase-admin/storage");
 const os = require("os");
 const fs = require("fs").promises; // Use promise-based fs for async/await
-const { parseFile } = require("music-metadata");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-const PizZip = require("pizzip");
-const Docxtemplater = require("docxtemplater");
 const https = require("https");
 const { defineString } = require('firebase-functions/params');
+
+const { transcribeAudio } = require("./utils/transcription");
+const { generateReportJSON } = require("./utils/gemini");
+const { generateDocx } = require("./utils/docx-generator");
 
 // Initialize the Firebase Admin SDK.
 initializeApp();
 
 // --- CONFIGURATION ---
-const geminiApiKey = defineString("GEMINI_API_KEY");
 // The paths to the context and template files in your Cloud Storage bucket.
 const DOCX_TEMPLATE_PATH = "Report-Template.docx";
 const JSON_TEMPLATE_PATH = "Report-Template.json";
@@ -140,62 +138,38 @@ exports.generateDocxReport = onCall({
   const db = getFirestore();
   const bucket = getStorage().bucket();
   const tempFilePaths = []; // Array for tracking temporary files for cleanup.
+  const reportRef = db.collection("reports").doc(reportId);
 
   try {
+    const reportDoc = await reportRef.get();
+    if (!reportDoc.exists) {
+      throw new HttpsError("not-found", "Report document not found.");
+    }
+    const reportData = reportDoc.data();
+
+    // Prevent concurrent or duplicate report generations.
+    if (reportData.status === "finalizing" || reportData.status === "complete") {
+      throw new HttpsError("already-exists", `Report generation is already ${reportData.status}.`);
+    }
+
+    // Update the report status to "finalizing".
+    await reportRef.update({ status: "finalizing" });
+
     // --- Step 1: Parallel Data Fetching & Pre-processing ---
     console.log(`Starting robust report generation for ID: ${reportId}`);
     
-    const [reportDoc, issuesSnapshot, jsonTemplateBuffer, qualityCodesBuffer] = await Promise.all([
-        db.collection("reports").doc(reportId).get(),
+    const [issuesSnapshot, jsonTemplateBuffer, qualityCodesBuffer] = await Promise.all([
         db.collection("issues").where("reportId", "==", reportId).get(),
         bucket.file(JSON_TEMPLATE_PATH).download(),
         bucket.file(QUALITY_CODES_PATH).download()
     ]);
-
-    if (!reportDoc.exists) throw new HttpsError("not-found", "Report document not found.");
-    const reportData = reportDoc.data();
     
     const reportTemplateJson = JSON.parse(jsonTemplateBuffer[0].toString('utf8'));
     const qualityCodesJson = JSON.parse(qualityCodesBuffer[0].toString('utf8'));
 
     // --- Step 2: Robust Audio Transcription (Conditional) ---
-    let transcription = "[No audio file was provided for this report.]";
+    const transcription = await transcribeAudio(reportData, reportId, bucket, tempFilePaths);
 
-    if (reportData.audioFilePaths && Array.isArray(reportData.audioFilePaths) && reportData.audioFilePaths.length > 0) {
-        const audioTempPath = path.join(os.tmpdir(), `audio_${reportId}`);
-        tempFilePaths.push(audioTempPath); 
-        
-        // For simplicity, we process the first audio file. The logic can be expanded to loop over all.
-        const audioUrl = reportData.audioFilePaths[0];
-        const storageFilePath = decodeURIComponent(audioUrl.split('/o/')[1].split('?')[0]);
-        await bucket.file(storageFilePath).download({ destination: audioTempPath });
-
-        const metadata = await parseFile(audioTempPath);
-        const config = {
-            languageCode: "en-US",
-            audioChannelCount: metadata.format.numberOfChannels,
-            enableAutomaticPunctuation: true,
-        };
-        if (metadata.format.codec?.includes("PCM")) config.encoding = "LINEAR16";
-        else if (metadata.format.codec?.includes("MPEG")) config.encoding = "MP3";
-        else throw new HttpsError("invalid-argument", `Unsupported audio codec: ${metadata.format.codec}`);
-        config.sampleRateHertz = metadata.format.sampleRate;
-        
-        const gcsUri = `gs://${bucket.name}/${storageFilePath}`;
-        
-        if (metadata.format.duration < 60) {
-            const [response] = await new speech.SpeechClient().recognize({ audio: { uri: gcsUri }, config });
-            transcription = response.results.map(r => r.alternatives[0].transcript).join('\n');
-        } else {
-            const [operation] = await new speech.SpeechClient().longRunningRecognize({ audio: { uri: gcsUri }, config });
-            const [response] = await operation.promise();
-            transcription = response.results.map(r => r.alternatives[0].transcript).join('\n');
-        }
-        console.log("Transcription successful.");
-    } else {
-        console.log("No audio file paths found in report. Skipping transcription process.");
-    }
-    
     // --- Step 3: Create Issues Context for Gemini Prompt ---
     const issuesData = issuesSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id }));
     const issuesForPrompt = issuesData.map(issue => ({
@@ -205,39 +179,13 @@ exports.generateDocxReport = onCall({
     }));
 
     // --- Step 4: AI Content Generation (Gemini) ---
-    console.log("Constructing prompt and calling Gemini API...");
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-    const prompt = `
-      Based on the following context files, your task is to generate a single, valid JSON object that strictly follows the structure of the provided "JSON Report Template". Populate the fields using the information from the other files. Ensure the 'description' for each issue is a professionally rewritten version of the raw notes, using the full audio transcript for context. Maintain the exact relationship between issues and their 'image_filenames'. Also, preserve the original 'id' for each issue.
-
-      CONTEXT 1: AUDIO TRANSCRIPT:
-      ${transcription}
-      ---
-      CONTEXT 2: ISSUES AND IMAGES JSON:
-      ${JSON.stringify(issuesForPrompt, null, 2)}
-      ---
-      CONTEXT 3: QUALITY CODES LIBRARY:
-      ${JSON.stringify(qualityCodesJson, null, 2)}
-      ---
-      CONTEXT 4: JSON REPORT TEMPLATE (YOUR OUTPUT MUST MATCH THIS STRUCTURE):
-      ${JSON.stringify(reportTemplateJson, null, 2)}
-      ---
-
-      Now, generate only the final JSON object. Do not include any other text, explanations, or markdown formatting.`;
-
-    const result = await model.generateContent(prompt);
-    let aiResponseText = result.response.text();
-    aiResponseText = aiResponseText.replace(/```json\n?/g, "").replace(/```/g, "");
-    const aiGeneratedData = JSON.parse(aiResponseText);
-    console.log("AI-generated JSON structure received successfully.");
+    const aiGeneratedData = await generateReportJSON(transcription, issuesForPrompt, qualityCodesJson, reportTemplateJson);
     
-    // --- ** NEW ROBUSTNESS CHECK: Validate the AI's Response ** ---
-    if (!aiGeneratedData || !Array.isArray(aiGeneratedData.issues)) {
-        console.error("AI response is missing a valid 'issues' array. Response received:", JSON.stringify(aiGeneratedData, null, 2));
-        throw new HttpsError("internal", "The AI model returned an invalid or unexpected data structure. Could not process the report.");
-    }
-    // --- END OF NEW CHECK ---
+    // --- Step 4a: Save AI-generated JSON ---
+    const jsonPath = `final-reports/${reportId}.json`;
+    await bucket.file(jsonPath).save(JSON.stringify(aiGeneratedData, null, 2), {
+      contentType: "application/json",
+    });
 
     // --- Step 5: Image Processing & Data Merging for DOCX ---
     console.log("Processing images for DOCX insertion...");
@@ -262,25 +210,7 @@ exports.generateDocxReport = onCall({
     }
     
     // --- Step 6: DOCX Generation ---
-    console.log("Generating DOCX file from template...");
-    const docxTemplateBuffer = await bucket.file(DOCX_TEMPLATE_PATH).download();
-    const zip = new PizZip(docxTemplateBuffer[0]);
-    const doc = new Docxtemplater(zip, {
-        paragraphLoop: true,
-        linebreaks: true,
-        modules: [{
-            name: "ImageModule",
-            options: {
-                centered: false,
-                getImage: (tag) => Buffer.from(tag, 'base64'),
-                getSize: () => [450, 300],
-            }
-        }]
-    });
-    
-    doc.setData(aiGeneratedData);
-    doc.render();
-    const outputBuffer = doc.getZip().generate({ type: "nodebuffer" });
+    const outputBuffer = await generateDocx(aiGeneratedData, bucket, DOCX_TEMPLATE_PATH);
 
     // --- Step 7: Finalization and Storage ---
     console.log("Uploading final report to Cloud Storage...");
@@ -302,7 +232,16 @@ exports.generateDocxReport = onCall({
     let userMessage = "An error occurred during report generation.";
     if (error.code && error.details) userMessage = error.details;
     else if (error instanceof Error) userMessage = error.message;
-    throw new HttpsError("internal", userMessage);
+    
+    // Update the report status to "failed" in Firestore.
+    if (error.code !== "already-exists") {
+        await reportRef.update({
+            status: "failed",
+            error: userMessage
+        });
+    }
+    
+    throw new HttpsError(error.code || "internal", userMessage);
   } finally {
     // --- Step 8: Guaranteed Resource Cleanup ---
     console.log("Cleaning up temporary files...");
@@ -316,4 +255,4 @@ exports.generateDocxReport = onCall({
       }
     }
   }
-}); 
+});

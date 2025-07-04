@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getFirestore, doc, updateDoc } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
-import { auth } from '../firebase-config';
-import './Dashboard.css';
+import { auth, db, storage, functions } from '../firebase/firebase-config';
+import { httpsCallable } from 'firebase/functions';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { doc, updateDoc } from 'firebase/firestore';
+import { logErrorToFirestore } from '../firebase/logError';
+import ErrorMessage from './common/ErrorMessage';
+import '../styles/Dashboard.css';
 
 export default function Dashboard() {
   const [title, setTitle] = useState('');
   const [audioFiles, setAudioFiles] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState(null);
   const [feedback, setFeedback] = useState('');
   const navigate = useNavigate();
 
@@ -24,40 +27,39 @@ export default function Dashboard() {
 
   async function handleSubmit(e) {
     e.preventDefault();
+    setError(null);
     if (!title || audioFiles.length === 0) {
-      setFeedback('Both title and at least one audio file are required.');
+      setError('Both title and at least one audio file are required.');
       return;
     }
     if (!auth.currentUser) {
-      setFeedback('You must be logged in to create a report.');
+      setError('You must be logged in to create a report.');
       return;
     }
     setIsSubmitting(true);
     setFeedback('Step 1/3: Creating report entry…');
     try {
-      const fn = getFunctions();
-      const createReport = httpsCallable(fn, 'createReport');
+      const createReport = httpsCallable(functions, 'createReport');
       const { data: { reportId } } = await createReport({ title });
       if (!reportId) throw new Error('No reportId returned.');
 
-      setFeedback(\`Step 2/3: Uploading \${audioFiles.length} file(s)…\`);
-      const storage = getStorage();
+      setFeedback(`Step 2/3: Uploading ${audioFiles.length} file(s)…`);
       const urls = await Promise.all(
         audioFiles.map(file =>
-          uploadBytes(ref(storage, \`audio/\${reportId}/\${file.name}\`), file)
+          uploadBytes(ref(storage, `audio/${reportId}/${file.name}`), file)
             .then(r => getDownloadURL(r.ref))
         )
       );
 
       setFeedback('Step 3/3: Finalizing report…');
-      const db = getFirestore();
       await updateDoc(doc(db, 'reports', reportId), { audioFilePaths: urls });
 
       setFeedback('Success! Redirecting…');
-      navigate(\`/report/\${reportId}\`);
+      navigate(`/report/${reportId}`);
     } catch (err) {
       console.error(err);
-      setFeedback(\`Error: \${err.message}\`);
+      logErrorToFirestore(err, { component: "Dashboard", action: "handleSubmit" });
+      setError(`Error: ${err.message}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -108,7 +110,8 @@ export default function Dashboard() {
         </button>
       </form>
 
-      {feedback && <p>{feedback}</p>}
+      {isSubmitting && <p>{feedback}</p>}
+      {error && <ErrorMessage message={error} />}
     </div>
   );
 }

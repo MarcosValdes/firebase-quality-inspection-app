@@ -1,21 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { getFunctions, httpsCallable } from 'firebase/functions';
-import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { getFirestore, doc, updateDoc } from 'firebase/firestore';
-import './IssuePage.css';
+import { useParams } from 'react-router-dom';
+import { httpsCallable } from 'firebase/functions';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { doc, updateDoc } from 'firebase/firestore';
+import { functions, storage, db } from '../firebase/firebase-config';
+import { logErrorToFirestore } from '../firebase/logError';
+import ErrorMessage from './common/ErrorMessage';
+import '../styles/IssuePage.css';
 
 export default function IssuePage() {
   const { reportId } = useParams();
-  const navigate = useNavigate();
   const [issueCount, setIssueCount] = useState(1);
   const [photos, setPhotos] = useState([]);
   const [desc, setDesc] = useState('');
   const [feedback, setFeedback] = useState('');
+  const [error, setError] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [downloadUrl, setDownloadUrl] = useState('');
 
   useEffect(() => {
-    setFeedback(\`Adding issues to Report ID: \${reportId}\`);
+    setFeedback(`Adding issues to Report ID: ${reportId}`);
   }, [reportId]);
 
   function handlePhotoChange(e) {
@@ -29,26 +33,25 @@ export default function IssuePage() {
 
   async function saveNext() {
     if (photos.length === 0) {
-      alert('Please select at least one photo.');
+      setError('Please select at least one photo.');
       return;
     }
+    setError(null);
+    setIsSubmitting(true);
     setFeedback('Saving issue…');
     try {
-      const fn = getFunctions();
-      const addIssue = httpsCallable(fn, 'addIssueToReport');
+      const addIssue = httpsCallable(functions, 'addIssueToReport');
       const { data: { issueId } } = await addIssue({ reportId, description: desc });
       if (!issueId) throw new Error('No issueId returned.');
 
       setFeedback('Uploading photos…');
-      const storage = getStorage();
       const urls = await Promise.all(
         photos.map(file =>
-          uploadBytes(ref(storage, \`images/\${reportId}/\${issueId}/\${file.name}\`), file)
+          uploadBytes(ref(storage, `images/${reportId}/${issueId}/${file.name}`), file)
             .then(r => getDownloadURL(r.ref))
         )
       );
 
-      const db = getFirestore();
       await updateDoc(doc(db, 'issues', issueId), { imagePaths: urls });
 
       setIssueCount(c => c + 1);
@@ -57,22 +60,31 @@ export default function IssuePage() {
       setFeedback('Issue saved! Ready for next.');
     } catch (err) {
       console.error(err);
-      setFeedback(\`Error: \${err.message}\`);
+      logErrorToFirestore(err, { component: "IssuePage", action: "saveNext" });
+      setError(`Error saving issue: ${err.message}`);
+    } finally {
+        setIsSubmitting(false);
     }
   }
 
   async function finishReport() {
     if (!window.confirm('Finish adding issues and generate final report?')) return;
-    setFeedback('Generating report… please wait.');
+    setError(null);
+    setIsSubmitting(true);
+    setFeedback('Generating report… this may take a few minutes.');
+    setDownloadUrl('');
+
     try {
-      const fn = getFunctions();
-      const gen = httpsCallable(fn, 'generateDocxReport');
+      const gen = httpsCallable(functions, 'generateDocxReport');
       const { data: { fileUrl } } = await gen({ reportId });
       setDownloadUrl(fileUrl);
-      setFeedback('Report ready. You can download below.');
+      setFeedback('Report ready. You can download it below.');
     } catch (err) {
       console.error(err);
-      setFeedback(\`Error: \${err.message}\`);
+      logErrorToFirestore(err, { component: "IssuePage", action: "finishReport" });
+      setError(`Error generating report: ${err.message}`);
+    } finally {
+      setIsSubmitting(false);
     }
   }
 
@@ -98,6 +110,7 @@ export default function IssuePage() {
             accept="image/*"
             multiple
             onChange={handlePhotoChange}
+            disabled={isSubmitting}
           />
         </div>
       </div>
@@ -114,23 +127,26 @@ export default function IssuePage() {
         value={desc}
         onChange={e => setDesc(e.target.value)}
         placeholder="Describe the issue"
+        disabled={isSubmitting}
       />
 
       <div className="button-group">
-        <button className="btn-save" onClick={saveNext}>
+        <button className="btn-save" onClick={saveNext} disabled={isSubmitting}>
           Save & Add Next Issue
         </button>
-        <button className="btn-finish" onClick={finishReport}>
-          Finish Report
+        <button className="btn-finish" onClick={finishReport} disabled={isSubmitting}>
+          {isSubmitting ? 'Processing...' : 'Finish Report'}
         </button>
       </div>
+
+      {isSubmitting && <p>{feedback}</p>}
+      {error && <ErrorMessage message={error} />}
 
       {downloadUrl && (
         <button className="btn-download" onClick={() => window.open(downloadUrl)}>
           Download Report
         </button>
       )}
-      {feedback && <p>{feedback}</p>}
     </div>
   );
 }
