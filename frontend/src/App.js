@@ -7,6 +7,7 @@ import { auth } from './firebase-config';
 import LoginPage from './components/LoginPage';
 import Dashboard from './components/Dashboard';
 import './App.css';
+import IssuePage from './components/IssuePage';
 
 function App() {
   const [user, setUser] = useState(null);
@@ -47,6 +48,7 @@ function App() {
           <Routes>
             <Route path="/login" element={!user ? <LoginPage /> : <Navigate to="/" />} />
             <Route path="/" element={user ? <Dashboard /> : <Navigate to="/login" />} />
+            <Route path="/report/:reportId" element={user ? <IssuePage /> : <Navigate to="/login" />} />
           </Routes>
         </main>
       </div>
