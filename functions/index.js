@@ -1,6 +1,7 @@
 const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
+const { getStorage } = require("firebase-admin/storage");
 const path = require("path");
 const os = require("os");
 const fs = require("fs").promises;
@@ -118,7 +119,7 @@ exports.generateDocxReport = onCall({
                         https.get(imageUrl, res => {
                             const chunks = [];
                             res.on('data', chunk => chunks.push(chunk));
-                            res.on('end', () => resolve(Buffer.concat(chunks).toString('base64')));
+                            res.on('end', () => resolve(Buffer.concat(chunks)));
                             res.on('error', reject);
                         });
                     })

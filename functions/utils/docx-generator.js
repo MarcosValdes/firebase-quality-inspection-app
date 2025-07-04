@@ -1,5 +1,6 @@
 const PizZip = require("pizzip");
 const Docxtemplater = require("docxtemplater");
+const ImageModule = require('docxtemplater-image-module-free');
 
 /**
  * Generates a DOCX file from a template and data.
@@ -11,17 +12,17 @@ const Docxtemplater = require("docxtemplater");
 module.exports.generateDocx = async function(data, bucket, templatePath) {
     const docxTemplateBuffer = await bucket.file(templatePath).download();
     const zip = new PizZip(docxTemplateBuffer[0]);
+
+    const imageModule = new ImageModule({
+        centered: false,
+        getImage: (tag) => tag,
+        getSize: () => [450, 300],
+    });
+
     const doc = new Docxtemplater(zip, {
         paragraphLoop: true,
         linebreaks: true,
-        modules: [{
-            name: "ImageModule",
-            options: {
-                centered: false,
-                getImage: (tag) => Buffer.from(tag, 'base64'),
-                getSize: () => [450, 300],
-            }
-        }]
+        modules: [imageModule],
     });
     
     doc.setData(data);

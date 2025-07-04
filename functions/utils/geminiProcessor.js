@@ -42,14 +42,13 @@ module.exports.generateReportJSON = async function(transcription, issuesForPromp
   let aiGeneratedData;
   try {
     const aiResponseText = result.response.text();
-    const cleanedText = aiResponseText.replace(/```json
-?/g, "").replace(/```/g, "");
+    const cleanedText = aiResponseText.replace(/```(?:json)?/g, "").trim();
     aiGeneratedData = JSON.parse(cleanedText);
   } catch(error) {
     console.error("Failed to parse Gemini response:", error, { text: result.response.text() });
     throw new HttpsError("internal", "Failed to parse the AI model's response.", { originalError: error });
   }
-  
+
   try {
     const validatedData = reportSchema.parse(aiGeneratedData);
     return validatedData;
