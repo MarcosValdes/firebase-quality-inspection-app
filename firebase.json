@@ -9,24 +9,12 @@
       "source": "functions",
       "codebase": "default",
       "predeploy": [
-        "npm --prefix \"$RESOURCE_DIR\" run lint"
+        "npm --prefix "$RESOURCE_DIR" run lint"
       ]
   },
-  "apphosting": [
-    {
-      "backendId": "my-web-app",
-      "rootDir": "public",
-      "ignore": [
-        "node_modules",
-        ".git",
-        "firebase-debug.log",
-        "firebase-debug.*.log",
-        "functions"
-      ]
-    }
-  ],
   "hosting": {
-    "public": "public",
+    "site": "gardisen-quality-inspections",
+    "public": "frontend/build",
     "ignore": [
       "firebase.json",
       "**/.*",

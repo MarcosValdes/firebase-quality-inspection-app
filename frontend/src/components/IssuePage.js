@@ -42,6 +42,10 @@ export default function IssuePage() {
         setPhotos(prev => [...prev, ...Array.from(e.target.files)]);
     }
 
+    function handleRemovePhoto(indexToRemove) {
+        setPhotos(prev => prev.filter((_, index) => index !== indexToRemove));
+    }
+
     async function saveNext() {
         if (photos.length === 0) {
             setError('Please select at least one photo.');
@@ -146,7 +150,18 @@ export default function IssuePage() {
             </div>
             {photos.length > 0 && (
                 <ul>
-                {photos.map((f, i) => <li key={i}>{f.name}</li>)}
+                {photos.map((f, i) => (
+                    <li key={i}>
+                        {f.name}
+                        <button
+                            type="button"
+                            style={{ color: '#b32400', marginLeft: '10px' }}
+                            onClick={() => handleRemovePhoto(i)}
+                        >
+                            Remove
+                        </button>
+                    </li>
+                ))}
                 </ul>
             )}
             <div className="divider" />

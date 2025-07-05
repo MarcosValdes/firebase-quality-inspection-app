@@ -25,6 +25,10 @@ export default function Dashboard() {
     ]);
   }
 
+  function handleRemoveAudioFile(fileToRemove) {
+    setAudioFiles(prev => prev.filter(file => file.name !== fileToRemove.name));
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setError(null);
@@ -100,7 +104,18 @@ export default function Dashboard() {
           </div>
           {audioFiles.length > 0 && (
             <ul>
-              {audioFiles.map(f => <li key={f.name}>{f.name}</li>)}
+              {audioFiles.map(f => (
+                <li key={f.name}>
+                  {f.name}
+                  <button
+                    type="button"
+                    style={{ color: '#b32400', marginLeft: '10px' }}
+                    onClick={() => handleRemoveAudioFile(f)}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
             </ul>
           )}
         </div>
