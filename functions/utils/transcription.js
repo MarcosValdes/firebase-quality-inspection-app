@@ -1,7 +1,6 @@
 const speech = require("@google-cloud/speech");
 const path = require("path");
 const os = require("os");
-const { parseFile } = require("music-metadata");
 const { HttpsError } = require("firebase-functions/v2/https");
 
 /**
@@ -23,7 +22,8 @@ module.exports.transcribeAudio = async function(reportData, reportId, bucket, te
       const storageFilePath = decodeURIComponent(audioUrl.split('/o/')[1].split('?')[0]);
       await bucket.file(storageFilePath).download({ destination: audioTempPath });
 
-      const metadata = await parseFile(audioTempPath);
+      const musicMetadata = await import("music-metadata");
+      const metadata = await musicMetadata.parseFile(audioTempPath);
       const config = {
           languageCode: "en-US",
           audioChannelCount: metadata.format.numberOfChannels,
@@ -39,13 +39,11 @@ module.exports.transcribeAudio = async function(reportData, reportId, bucket, te
       const speechClient = new speech.SpeechClient();
       if (metadata.format.duration < 60) {
           const [response] = await speechClient.recognize({ audio: { uri: gcsUri }, config });
-          transcription = response.results.map(r => r.alternatives[0]?.transcript || "").join('
-');
+          transcription = response.results.map(r => r.alternatives[0]?.transcript || "").join(' ');
       } else {
           const [operation] = await speechClient.longRunningRecognize({ audio: { uri: gcsUri }, config });
           const [response] = await operation.promise();
-          transcription = response.results.map(r => r.alternatives[0]?.transcript || "").join('
-');
+          transcription = response.results.map(r => r.alternatives[0]?.transcript || "").join(' ');
       }
   }
 
