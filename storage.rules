@@ -2,12 +2,13 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Allow users to upload their own report audio and issue images.
+    // Images and audio can only be uploaded by the report's owner.
     match /audio/{reportId}/{fileName} {
-      allow write: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == get(/databases/$(database)/documents/reports/$(reportId)).data.inspectorId;
     }
+
     match /images/{reportId}/{issueId}/{fileName} {
-      allow write: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == get(/databases/$(database)/documents/reports/$(reportId)).data.inspectorId;
     }
   }
 }
