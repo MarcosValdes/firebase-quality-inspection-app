@@ -1,52 +1,66 @@
-# To learn more about how to use Nix to configure your environment
-# see: https://firebase.google.com/docs/studio/customize-workspace
 { pkgs, ... }: {
-  # Which nixpkgs channel to use.
-  channel = "stable-24.05"; # or "unstable"
+  # 1. Select a Nixpkgs channel.
+  # "stable-24.05" is a good choice for stability.
+  # "unstable" gives you the latest packages.
+  channel = "unstable";
 
-  # Use https://search.nixos.org/packages to find packages
+  # 2. Specify the packages needed for your environment.
+  # Use https://search.nixos.org/packages to find more.
   packages = [
-    pkgs.nano
     pkgs.nodejs_20
     pkgs.firebase-tools
-    pkgs.nodePackages.npm
+    pkgs.nodePackages.npm # For managing Node.js dependencies
   ];
 
-  # Sets environment variables in the workspace
-  env = {};
-  idx = {
-    # Search for the extensions you want on https://open-vsx.org/ and use "publisher.id"
-    extensions = [
-      # "vscodevim.vim"
-    ];
+  # 3. Configure environment variables.
+  env = {
+    # Example: Set a default environment variable.
+    # MY_VARIABLE = "hello_world";
+  };
 
-    # Enable previews
-    previews = {
-      enable = true;
-      previews = {
-        web = {
-          command = ["npm" "start"];
-          cwd = "./frontend";
-          manager = "web";
-          env = {
-            PORT = "$PORT";
-          };
-        };
-      };
+  # 4. Define VS Code extensions to install.
+  # Find extensions on https://open-vsx.org/
+  idx.extensions = [
+    "dbaeumer.vscode-eslint"
+    "esbenp.prettier-vscode"
+    "Firebase.firebase-vscode-extension"
+  ];
+
+  # 5. Set up web previews for your running services.
+  idx.previews = {
+    enable = true;
+    previews = [
+      {
+        # Preview for the frontend React app
+        id = "frontend";
+        command = ["npm" "start"];
+        cwd = "frontend";
+        manager = "web";
+      }
+      # You can add another preview for the Firebase Emulator UI
+      # {
+      #   id = "emulator-ui";
+      #   # The default port for the Emulator UI is 4000
+      #   port = 4000;
+      #   label = "Emulator UI";
+      #   command = ["firebase","emulators:start"];
+      # }
+    ];
+  };
+
+  # 6. Define tasks that run when your workspace is created or started.
+  idx.workspace = {
+    # Runs when a workspace is first created.
+    onCreate = {
+      install-frontend-deps = "npm install --prefix frontend";
+      install-functions-deps = "npm install --prefix functions";
+      build-frontend = "npm run build --prefix frontend";
     };
 
-    # Workspace lifecycle hooks
-    workspace = {
-      # Runs when a workspace is first created
-      onCreate = {
-        npm-install-functions = "npm install --prefix functions";
-        npm-install-frontend = "npm install --prefix frontend";
-      };
-      # Runs when the workspace is (re)started
-      onStart = {
-        # Example: start a background task to watch and re-build backend code
-        # watch-backend = "npm run watch-backend";
-      };
+    # Runs whenever the workspace is (re)started.
+    onStart = {
+      # Example: Start a background process.
+      # start-backend = "npm run dev --prefix functions";
     };
   };
 }
