@@ -67,7 +67,8 @@ export default function Dashboard() {
       return;
     }
     // Ensure the user is authenticated
-    if (!auth.currentUser) {
+    const user = auth.currentUser;
+    if (!user) {
       setError('You must be logged in to create a report.');
       return;
     }
@@ -80,10 +81,18 @@ export default function Dashboard() {
       if (!reportId) throw new Error('No reportId returned.');
 
       setFeedback(`Step 2/3: Uploading ${audioFiles.length} file(s)…`);
-      // Upload each audio file to Firebase Storage
+      
+      // Define the metadata to be sent with the file
+      const metadata = {
+        customMetadata: {
+          'inspectorId': user.uid
+        }
+      };
+
+      // Upload each audio file to Firebase Storage with the new metadata
       const urls = await Promise.all(
         audioFiles.map(file =>
-          uploadBytes(ref(storage, `audio/${reportId}/${file.name}`), file)
+          uploadBytes(ref(storage, `audio/${reportId}/${file.name}`), file, metadata)
             .then(r => getDownloadURL(r.ref))
         )
       );
