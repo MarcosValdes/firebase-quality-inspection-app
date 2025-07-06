@@ -85,7 +85,7 @@ export default function Dashboard() {
       // Define the metadata to be sent with the file
       const metadata = {
         customMetadata: {
-          'inspectorId': user.uid
+          'inspectorId': auth.currentUser.uid
         }
       };
 

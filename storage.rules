@@ -2,14 +2,18 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Images and audio can only be uploaded by the report's owner.
-    // The 'inspectorId' is passed in the file's custom metadata.
     match /audio/{reportId}/{fileName} {
-      allow write: if request.auth != null && request.auth.uid == request.resource.metadata.inspectorId;
+      // Write is only allowed if the user provides correct metadata
+      allow write: if request.auth.uid == request.resource.metadata.inspectorId;
+      // Read is allowed by any authenticated user
+      allow read: if request.auth != null;
     }
 
     match /images/{reportId}/{issueId}/{fileName} {
-      allow write: if request.auth != null && request.auth.uid == request.resource.metadata.inspectorId;
+      // Write is only allowed if the user provides correct metadata
+      allow write: if request.auth.uid == request.resource.metadata.inspectorId;
+      // Read is allowed by any authenticated user
+      allow read: if request.auth != null;
     }
   }
 }

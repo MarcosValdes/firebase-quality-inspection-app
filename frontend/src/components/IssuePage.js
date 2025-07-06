@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
-import { functions, storage, db } from '../firebase/firebase-config';
+import { functions, storage, db, auth } from '../firebase/firebase-config';
 import { logErrorToFirestore } from '../firebase/logError';
 import ErrorMessage from './common/ErrorMessage';
 import Loader from './common/Loader';
@@ -58,9 +58,15 @@ export default function IssuePage() {
             const addIssue = httpsCallable(functions, 'addIssueToReport');
             const { data: { issueId } } = await addIssue({ reportId, description: desc });
             
+            const metadata = {
+                customMetadata: {
+                    'inspectorId': auth.currentUser.uid
+                }
+            }
+
             const urls = await Promise.all(
                 photos.map(file =>
-                    uploadBytes(ref(storage, `images/${reportId}/${issueId}/${file.name}`), file)
+                    uploadBytes(ref(storage, `images/${reportId}/${issueId}/${file.name}`), file, metadata)
                     .then(r => getDownloadURL(r.ref))
                 )
             );
