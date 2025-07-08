@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, collection } from 'firebase/firestore'; // Import collection
 import { functions, storage, db, auth } from '../firebase/firebase-config';
 import { logErrorToFirestore } from '../firebase/logError';
 import ErrorMessage from './common/ErrorMessage';
@@ -75,7 +75,6 @@ export default function IssuePage() {
      * This function is called when the "Save & Add Next Issue" button is clicked.
      */
     async function saveNext() {
-        // Validate that photos and a description have been provided.
         if (photos.length === 0) {
             setError('Please select at least one photo.');
             return;
@@ -84,37 +83,38 @@ export default function IssuePage() {
             setError('Please enter a description for the issue.');
             return;
         }
-
+    
         setError(null);
         setIsSubmitting(true);
-
         try {
-            // Call the 'addIssueToReport' cloud function to create an issue document.
-            const addIssue = httpsCallable(functions, 'addIssueToReport');
-            const { data: { issueId } } = await addIssue({ reportId, description: desc });
-            
-            // Prepare metadata for the photo upload, including the inspector's ID for security rules.
+            // Create a new document reference with an auto-generated ID
+            const newIssueRef = doc(collection(db, 'issues'));
+            const tempIssueIdForPath = newIssueRef.id;
+    
             const metadata = {
                 customMetadata: {
                     'inspectorId': auth.currentUser.uid
                 }
-            }
-
-            // Upload each photo to Cloud Storage and get its download URL.
+            };
+    
+            // Step 1: Upload photos and get their URLs
             const urls = await Promise.all(
                 photos.map(file =>
-                    uploadBytes(ref(storage, `images/${reportId}/${issueId}/${file.name}`), file, metadata)
+                    uploadBytes(ref(storage, `images/${reportId}/${tempIssueIdForPath}/${file.name}`), file, metadata)
                     .then(r => getDownloadURL(r.ref))
                 )
             );
-
-            // Update the issue document in Firestore with the photo URLs.
-            await updateDoc(doc(db, 'issues', issueId), { imagePaths: urls });
-
-            // Reset the form for the next issue.
+    
+            // Step 2: Call the Cloud Function with all the data
+            const addIssue = httpsCallable(functions, 'addIssueToReport');
+            // Pass description and the new image URLs
+            await addIssue({ reportId, description: desc, imagePaths: urls });
+    
+            // Step 3: Reset the form for the next issue
             setIssueCount(c => c + 1);
             setDesc('');
             setPhotos([]);
+    
         } catch (err) {
             logErrorToFirestore(err, { component: "IssuePage", action: "saveNext" });
             setError(`Error saving issue: ${err.message}`);

@@ -43,7 +43,7 @@ exports.addIssueToReport = onCall(async (request) => {
     if (!request.auth) {
         throw new HttpsError("unauthenticated", "You must be logged in.");
     }
-    const { reportId, description } = request.data;
+    const { reportId, description, imagePaths } = request.data;
     if (!reportId || !description) {
         throw new HttpsError("invalid-argument", "Request must include 'reportId' and 'description'.");
     }
@@ -54,7 +54,7 @@ exports.addIssueToReport = onCall(async (request) => {
         inspectorId: request.auth.uid,
         description,
         createdAt: FieldValue.serverTimestamp(),
-        imagePaths: [],
+        imagePaths: imagePaths || [],
     };
 
     const docRef = await db.collection("issues").add(newIssue);
