@@ -3,7 +3,6 @@ const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 const { getStorage } = require("firebase-admin/storage");
 const path = require("path");
-const os = require("os");
 const fs = require("fs").promises;
 const https = require("https");
 
@@ -108,7 +107,14 @@ exports.generateDocxReport = onCall({
             imageFilenames: (issue.imagePaths || []).map(url => path.basename(decodeURIComponent(url.split('/o/')[1].split('?')[0]))),
         }));
 
-        const aiGeneratedData = await generateReportJSON(transcription, issuesForPrompt, qualityCodesJson, reportTemplateJson);
+
+        const aiGeneratedData = await generateReportJSON(
+            reportData.title, 
+            transcription, 
+            issuesForPrompt, 
+            qualityCodesJson, 
+            reportTemplateJson
+        );
 
         const issueImageMap = new Map(issuesData.map(issue => [issue.id, issue.imagePaths]));
         await Promise.all(aiGeneratedData.issues.map(async (issue) => {

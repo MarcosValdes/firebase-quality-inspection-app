@@ -25,10 +25,22 @@ async function withRetry(fn, retries = 3, delay = 1000) {
  * @returns {Promise<object>} A promise that resolves with the validated AI-generated JSON object.
  * @throws {HttpsError} Throws an error if validation or generation fails.
  */
-module.exports.generateReportJSON = async function(transcription, issuesForPrompt, qualityCodesJson, reportTemplateJson) {
+module.exports.generateReportJSON = async function(
+  reportTitle, 
+  transcription, 
+  issuesForPrompt, 
+  qualityCodesJson, 
+  reportTemplateJson
+) {
   const genAI = new GoogleGenerativeAI(geminiApiKey.value());
   const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-  const prompt = buildGeminiPrompt(transcription, issuesForPrompt, qualityCodesJson, reportTemplateJson);
+  const prompt = buildGeminiPrompt(
+    reportTitle, 
+    transcription, 
+    issuesForPrompt, 
+    qualityCodesJson, 
+    reportTemplateJson
+  );
 
   let result;
   try {
