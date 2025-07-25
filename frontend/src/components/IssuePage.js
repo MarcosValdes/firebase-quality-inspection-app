@@ -1,61 +1,63 @@
+// Import necessary React hooks and components from external libraries and local files.
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { httpsCallable } from 'firebase/functions';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { doc, onSnapshot, collection } from 'firebase/firestore'; // Import collection
+import { doc, onSnapshot, collection } from 'firebase/firestore';
+// Import Firebase configuration and utility functions.
 import { functions, storage, db, auth } from '../firebase/firebase-config';
 import { logErrorToFirestore } from '../firebase/logError';
+// Import custom UI components.
 import ErrorMessage from './common/ErrorMessage';
 import Loader from './common/Loader';
+// Import component-specific styles.
 import '../styles/IssuePage.css';
 
 /**
- * IssuePage component allows users to add issues, including photos and descriptions,
- * to a specific report identified by the reportId from the URL.
+ * IssuePage component allows users to add issues, including photos and descriptions, to a specific report.
+ * It interacts with Firebase services for data storage, file uploads, and server-side processing.
  */
 export default function IssuePage() {
-    // Get the reportId from the URL parameters.
+    //- HOOKS
+    // useParams hook to get the reportId from the URL.
     const { reportId } = useParams();
-
-    // State for the current issue being added.
+    // useState hooks to manage component state.
     const [issueCount, setIssueCount] = useState(1);
     const [photos, setPhotos] = useState([]);
     const [desc, setDesc] = useState('');
-
-    // State for handling UI feedback, like errors and loading states.
     const [error, setError] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    
-    // State for the overall report, synced with Firestore.
     const [reportStatus, setReportStatus] = useState('loading');
     const [downloadUrl, setDownloadUrl] = useState('');
     const [reportError, setReportError] = useState('');
 
+    //-LIFECYCLE
     /**
      * useEffect hook to subscribe to real-time updates of the report document in Firestore.
-     * This keeps the component's state in sync with the backend.
+     * This keeps the component's state synchronized with the backend.
      */
     useEffect(() => {
         const reportRef = doc(db, "reports", reportId);
-        // onSnapshot listens for real-time changes to the report document.
+        // onSnapshot listens for real-time updates to the report document.
         const unsubscribe = onSnapshot(reportRef, (docSnap) => {
             const data = docSnap.data();
+            // Update state based on the latest report data.
             setReportStatus(data?.status || 'unknown');
             setDownloadUrl(data?.finalDocxUrl || '');
             setReportError(data?.errorMessage || '');
         }, (err) => {
-            // Log any errors during subscription and display a message to the user.
+            // Log any errors during subscription and set an error message for the user.
             logErrorToFirestore(err, { component: "IssuePage", action: "onSnapshot" });
             setError("Failed to subscribe to report updates.");
         });
-
         // Cleanup function to unsubscribe from the listener when the component unmounts.
         return () => unsubscribe();
     }, [reportId]);
 
+    //-FUNCTIONS
     /**
-     * Handles the file input change event to add selected photos to the state.
-     * @param {React.ChangeEvent<HTMLInputElement>} e The event object.
+     * Handles the change event for the file input, adding selected photos to the state.
+     * @param {React.ChangeEvent<HTMLInputElement>} e - The event object from the file input.
      */
     function handlePhotoChange(e) {
         if (!e.target.files) return;
@@ -63,149 +65,159 @@ export default function IssuePage() {
     }
 
     /**
-     * Removes a photo from the state by its index.
-     * @param {number} indexToRemove The index of the photo to remove.
+     * Removes a photo from the photos array based on its index.
+     * @param {number} indexToRemove - The index of the photo to be removed.
      */
     function handleRemovePhoto(indexToRemove) {
         setPhotos(prev => prev.filter((_, index) => index !== indexToRemove));
     }
 
     /**
-     * Saves the current issue (photos and description) to Firestore and Cloud Storage.
-     * This function is called when the "Save & Add Next Issue" button is clicked.
+     * Saves the current issue (photos and description) to Firestore and Firebase Storage.
+     * @returns {Promise<boolean>} - A promise that resolves to true if the issue was saved successfully, false otherwise.
      */
-    async function saveNext() {
-        if (photos.length === 0) {
-            setError('Please select at least one photo.');
-            return;
+    async function handleSaveCurrentIssue() {
+        // Validate that both a description and at least one photo are provided.
+        if (photos.length === 0 || !desc.trim()) {
+            setError('Both a description and at least one photo are required to save an issue.');
+            return false;
         }
-        if (!desc.trim()) {
-            setError('Please enter a description for the issue.');
-            return;
-        }
-    
+
         setError(null);
         setIsSubmitting(true);
         try {
-            // Create a new document reference with an auto-generated ID
+            // Create a new issue document reference to get a unique ID.
             const newIssueRef = doc(collection(db, 'issues'));
-            const tempIssueIdForPath = newIssueRef.id;
-    
-            const metadata = {
-                customMetadata: {
-                    'inspectorId': auth.currentUser.uid
-                }
-            };
-    
-            // Step 1: Upload photos and get their URLs
+            const newIssueId = newIssueRef.id;
+            const metadata = { customMetadata: { 'inspectorId': auth.currentUser.uid } };
+
+            // Upload photos to Firebase Storage and get their download URLs.
             const urls = await Promise.all(
                 photos.map(file =>
-                    uploadBytes(ref(storage, `images/${reportId}/${tempIssueIdForPath}/${file.name}`), file, metadata)
+                    uploadBytes(ref(storage, `images/${reportId}/${newIssueId}/${file.name}`), file, metadata)
                     .then(r => getDownloadURL(r.ref))
                 )
             );
-    
-            // Step 2: Call the Cloud Function with all the data
+
+            // Call a Firebase Function to add the issue data to the report.
             const addIssue = httpsCallable(functions, 'addIssueToReport');
-            // Pass description and the new image URLs
             await addIssue({ reportId, description: desc, imagePaths: urls });
-    
-            // Step 3: Reset the form for the next issue
-            setIssueCount(c => c + 1);
-            setDesc('');
-            setPhotos([]);
-    
+            return true;
         } catch (err) {
-            logErrorToFirestore(err, { component: "IssuePage", action: "saveNext" });
+            logErrorToFirestore(err, { component: "IssuePage", action: "handleSaveCurrentIssue" });
             setError(`Error saving issue: ${err.message}`);
+            return false;
         } finally {
             setIsSubmitting(false);
         }
     }
 
     /**
-     * Finalizes the report by calling the 'generateDocxReport' cloud function.
+     * Saves the current issue and resets the form to allow adding the next issue.
      */
-    async function finishReport() {
-        if (!window.confirm('Finish adding issues and generate final report?')) return;
-        setError(null);
-        
-        try {
-            // Call the cloud function to start the report generation process.
-            const gen = httpsCallable(functions, 'generateDocxReport');
-            await gen({ reportId });
-        } catch (err) {
-            logErrorToFirestore(err, { component: "IssuePage", action: "finishReport" });
-            setError(`Error starting report generation: ${err.message}`);
+    async function saveNext() {
+        const success = await handleSaveCurrentIssue();
+        if (success) {
+            // If the issue was saved successfully, reset the form fields.
+            setIssueCount(c => c + 1);
+            setDesc('');
+            setPhotos([]);
         }
     }
 
     /**
-     * Renders different UI elements based on the current status of the report.
-     * This provides feedback to the user during and after report generation.
+     * Finishes the report generation process. It first checks for any unsaved issue data and prompts the user to save it.
      */
-    const renderStatusContent = () => {
-        switch (reportStatus) {
-            case 'finalizing':
-                return <Loader />;
-            case 'complete':
-                return (
-                    <button className="btn-download" onClick={() => window.open(downloadUrl, "_blank")}>
-                        Download Report
-                    </button>
-                );
-            case 'error':
-                return (
-                    <div className="error-box">
-                        <p>An error occurred during report generation.</p>
-                        {reportError && <p><strong>Details:</strong> {reportError}</p>}
-                    </div>
-                );
-            default:
-                 // Default view with buttons to save an issue or finish the report.
-                 return (
-                    <div className="button-group">
-                        <button className="btn-save" onClick={saveNext} disabled={isSubmitting}>
-                        {isSubmitting ? 'Processing...' : 'Save & Add Next Issue'}
-                        </button>
-                        <button className="btn-finish" onClick={finishReport} disabled={isSubmitting}>
-                        {isSubmitting ? 'Processing...' : 'Finish & Generate Report'}
-                        </button>
-                    </div>
-                 );
+    async function finishReport() {
+        setError(null);
+        // Check for unsaved data and confirm with the user if they want to save it before finishing.
+        if (desc.trim() || photos.length > 0) {
+            const confirmed = window.confirm('You have an unsaved issue. Do you want to save it before finishing the report?');
+            if (confirmed) {
+                const success = await handleSaveCurrentIssue();
+                if (!success) {
+                    setError("Could not save the final issue. Please fix the error and try again.");
+                    return;
+                }
+            }
         }
+        
+        // Confirm that the user wants to finish the report.
+        if (!window.confirm('Finish adding issues and generate final report?')) return;
+        
+        try {
+            // Call a Firebase Function to generate the final DOCX report.
+            const gen = httpsCallable(functions, 'generateDocxReport');
+await gen({ reportId });
+} catch (err) {
+logErrorToFirestore(err, { component: "IssuePage", action: "finishReport" });
+setError(Error starting report generation: ${err.message});
+}
+}
+/**
+ * Renders the content based on the current report status.
+ * @returns {JSX.Element} - The JSX element to be rendered.
+ */
+const renderStatusContent = () => {
+    switch (reportStatus) {
+        case 'finalizing':
+            return <Loader />;
+        case 'complete':
+            return (
+                <button className="btn-download" onClick={() => window.open(downloadUrl, "_blank")}>
+                    Download Report
+                </button>
+            );
+        case 'error':
+            return (
+                <div className="error-box">
+                    <p>An error occurred during report generation.</p>
+                    {reportError && <p><strong>Details:</strong> {reportError}</p>}
+                </div>
+            );
+        default:
+            return (
+                <div className="button-group">
+                    <button className="btn-save" onClick={saveNext} disabled={isSubmitting}>
+                        {isSubmitting ? 'Processing...' : 'Save & Add Next Issue'}
+                    </button>
+                    <button className="btn-finish" onClick={finishReport} disabled={isSubmitting}>
+                        {isSubmitting ? 'Processing...' : 'Finish & Generate Report'}
+                    </button>
+                </div>
+            );
     }
+}
+//-RENDER
+return (
+    <div className="container">
+        <h1>Gardisen Workflow Automation</h1>
+        <div className="divider" />
+        <h2>Adding Issue to Report</h2>
+        <h3>"{reportId}"</h3>
+        <div className="divider2" />
 
-    return (
-        <div className="container">
-            <h1>Gardisen Workflow Automation</h1>
-            <div className="divider" />
-            <h2>Adding Issue to Report</h2>
-            <h3>"{reportId}"</h3>
-            <div className="divider2" />
+        <span className="issue-number">Issue #: {issueCount}</span>
+        <div className="divider" />
 
-            <span className="issue-number">Issue #: {issueCount}</span>
-            <div className="divider" />
-
-            {/* Photo upload section */}
-            <div className="issue-header">
-                <div className="half">
-                    <label htmlFor="photos">Issue Photos:</label>
-                </div>
-                <div className="half">
-                    <input
-                        id="photos"
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        onChange={handlePhotoChange}
-                        disabled={isSubmitting || reportStatus === 'finalizing' || reportStatus === 'complete'}
-                    />
-                </div>
+        <div className="issue-header">
+            <div className="half">
+                <label htmlFor="photos">Issue Photos:</label>
             </div>
-            {/* Display list of selected photos */}
-            {photos.length > 0 && (
-                <ul>
+            <div className="half">
+                <input
+                    id="photos"
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handlePhotoChange}
+                    disabled={isSubmitting || reportStatus === 'finalizing' || reportStatus === 'complete'}
+                />
+            </div>
+        </div>
+
+        {photos.length > 0 && (
+            <ul>
                 {photos.map((f, i) => (
                     <li key={i}>
                         {f.name}
@@ -218,26 +230,21 @@ export default function IssuePage() {
                         </button>
                     </li>
                 ))}
-                </ul>
-            )}
-            <div className="divider" />
+            </ul>
+        )}
+        <div className="divider" />
 
-            {/* Issue description section */}
-            <label htmlFor="desc">Issue Description:</label>
-            <textarea
-                id="desc"
-                value={desc}
-                onChange={e => setDesc(e.target.value)}
-                placeholder="Describe the issue"
-                disabled={isSubmitting || reportStatus === 'finalizing' || reportStatus === 'complete'}
-            />
+        <label htmlFor="desc">Issue Description:</label>
+        <textarea
+            id="desc"
+            value={desc}
+            onChange={e => setDesc(e.target.value)}
+            placeholder="Describe the issue"
+            disabled={isSubmitting || reportStatus === 'finalizing' || reportStatus === 'complete'}
+        />
 
-            {/* Display error messages if any */}
-            {error && <ErrorMessage message={error} />}
-
-            {/* Render status-specific content (e.g., loader, download button) */}
-            {renderStatusContent()}
-
-        </div>
-    );
+        {error && <ErrorMessage message={error} />}
+        {renderStatusContent()}
+    </div>
+);
 }

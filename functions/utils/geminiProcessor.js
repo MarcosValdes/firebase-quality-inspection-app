@@ -42,6 +42,12 @@ module.exports.generateReportJSON = async function(
     reportTemplateJson
   );
 
+  console.log("--- START OF PROMPT ---");
+  console.log(prompt);
+  console.log("--- END OF PROMPT ---")
+
+
+
   let result;
   try {
     const generate = () => model.generateContent(prompt);
@@ -66,6 +72,27 @@ module.exports.generateReportJSON = async function(
     return validatedData;
   } catch (error) {
       console.error("Zod validation failed:", error.errors);
+      
+      if (!aiGeneratedData.report_title && reportTitle) {
+        console.log("AI response was missing 'report-title'. Injecting it manually.");
+        aiGeneratedData.report_title = reportTitle;
+        try{
+          const validatedData = reportSchema.parse(aiGeneratedData);
+          console.log("Validation succeeded after manual correction.");
+          return validatedData;
+        } catch (error) {
+          console.error("Zod validation failed even after correction:", error.errors);
+          const errorDetails = error.errors.map(e => `[${e.path.join('.')}] ${e.message}`).join('; ');
+          
+          console.error("Failing prompt:", prompt);
+
+          throw new HttpsError("internal", `AI response validation failed: ${errorDetails}`, {
+            validationErrors: error.errors, 
+            failingPrompt: prompt
+          });
+        }
+      }
+
       const errorDetails = error.errors.map(e => `[${e.path.join('.')}] ${e.message}`).join('; ');
       throw new HttpsError("internal", `AI response validation failed: ${errorDetails}`, { validationErrors: error.errors });
   }

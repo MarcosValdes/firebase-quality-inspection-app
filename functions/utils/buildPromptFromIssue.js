@@ -17,7 +17,8 @@ module.exports.buildGeminiPrompt = function(
     Based on the following context files, 
     your task is to generate a single, valid JSON object 
     that strictly follows the structure of the provided "JSON Report Template". 
-    Populate the fields using the information from the other files. 
+    Populate the fields using the information from the other files.
+    IMPORTANT: Use the exact "REPORT TITLE" provided below for the 'report_title' field in your JSON output.
     Ensure the 'description' for each issue is a 
     professionally rewritten version of the raw notes, 
     using the full audio transcript for context. 
