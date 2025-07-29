@@ -43,7 +43,7 @@
       #   # The default port for the Emulator UI is 4000
       #   port = 4000;
       #   label = "Emulator UI";
-      #   command = ["firebase","emulators:start"];
+      #   command = ["firebase", "emulators:start"];
       # }
     ];
   };

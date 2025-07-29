@@ -151,7 +151,7 @@ export default function IssuePage() {
 await gen({ reportId });
 } catch (err) {
 logErrorToFirestore(err, { component: "IssuePage", action: "finishReport" });
-setError(Error starting report generation: ${err.message});
+setError(`Error starting report generation: ${err.message}`);
 }
 }
 /**
