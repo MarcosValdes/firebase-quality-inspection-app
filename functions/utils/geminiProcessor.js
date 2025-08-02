@@ -38,7 +38,7 @@ module.exports.generateReportJSON = async function(
 
     const PROJECT_ID = "gardisen-quality-inspections";
     const LOCATION = "us-central1";
-    const MODEL_NAME = "gemini-1.5-pro-preview-0409";
+    const MODEL_NAME = "gemini-2.5-pro";
 
     console.log("Action: Initializing VertexAI. Justification: Creating a client to interact with the Vertex AI platform using Application Default Credentials. Next: Get the specific generative model.");
     const vertexAI = new VertexAI({ project: PROJECT_ID, location: LOCATION });
