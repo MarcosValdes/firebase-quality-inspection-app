@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@google-cloud/speech": "^7.1.0",
+    "@google-cloud/vertexai": "^1.10.0",
     "@google/generative-ai": "^0.24.1",
     "docxtemplater": "^3.65.0",
     "docxtemplater-image-module-free": "^1.1.1",
