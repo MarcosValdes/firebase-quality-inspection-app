@@ -8,7 +8,7 @@ const { getStorage } = require("firebase-admin/storage");
 const path = require("path");
 const fs = require("fs").promises;
 
-// Import utility functions from local files
+// Import utility functions from local files 
 const { transcribeAudio } = require("./utils/transcription");
 const { generateReportJSON } = require("./utils/geminiProcessor");
 const { generateDocx } = require("./utils/docx-generator");
