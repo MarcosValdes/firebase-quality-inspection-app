@@ -1,7 +1,4 @@
-const { VertexAI } = require('@google-cloud/vertexai');
-const { HttpsError } = require("firebase-functions/v2/https");
-const { buildGeminiPrompt } = require("./buildPromptFromIssue");
-const { reportSchema } = require("./schemas");
+
 
 async function withRetry(fn, retries = 3, delay = 1000) {
     console.log("Action: Entering withRetry function. Justification: This function will attempt to execute a provided function, retrying on failure. Next: Execute the function in a try-catch block.");
@@ -35,6 +32,12 @@ module.exports.generateReportJSON = async function(
     console.log(`Data: issuesForPrompt = ${JSON.stringify(issuesForPrompt, null, 2)}`);
     console.log(`Data: qualityCodesJson = ${JSON.stringify(qualityCodesJson, null, 2)}`);
     console.log(`Data: reportTemplateJson = ${JSON.stringify(reportTemplateJson, null, 2)}`);
+
+    // --- LAZY LOADING: All libraries are required inside the function ---
+    const { VertexAI } = require('@google-cloud/vertexai');
+    const { HttpsError } = require("firebase-functions/v2/https");
+    const { buildGeminiPrompt } = require("./buildPromptFromIssue");
+    const { reportSchema } = require("./schemas");
 
     const PROJECT_ID = "gardisen-quality-inspections";
     const LOCATION = "us-central1";
